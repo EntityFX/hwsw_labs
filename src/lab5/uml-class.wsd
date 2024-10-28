@@ -1,0 +1,217 @@
+@startuml
+
+
+package Common
+{
+
+    enum CommandCode
+    {
+        ReadUser
+        ReadAllUsers
+        AddUser
+        EditUser
+        DeleteUser
+        SendMessage
+    }
+
+    class Command
+    {
+        + Code : short
+        + Arguments: map<string, object>
+    }
+
+    class CommandHelper <<static>>
+    {
+        + TryDeserializeCommand(requestArray : byte[]) : Command <<static>>
+        + SerializeCommand(command : Command) : byte[] <<static>>
+    }
+
+    class EncodeHelper <<static>>
+    {
+        + EncodeLengthToBase2Upper6Bit(value: ushort) : byte 
+        + DecodeBase2Upper6BitToLength(value: byte) : ushort
+    }
+
+    interface IMessageApi
+    {
+        + SendMessage(message : string) : bool
+    }
+
+    package UserApi
+    {
+        class User
+        {
+            + Id: int
+            + Name: string
+            + Active : bool
+            + Age : int
+        }
+
+        interface IUserApi
+        {
+            + Add(newUser: User) : bool
+            + Delete(id: int) : bool
+            + Update(id: int, updateUser : User) : bool
+            + GetAsync(id: int) : User
+            + GetAll() : User[]
+        }
+
+        IUserApi --> User
+    }
+
+    Command --> CommandCode
+
+}
+
+package TcpClient
+{
+    class NetTcpClient
+    {
+        - tcpClient: TcpClient
+        - serverIp : IPAddress
+        - serverPort : int
+
+        + Connect()
+        + Send(command: Command) : Command
+    }
+
+    class UserApiClient
+    {
+        - netTcpClient : NetTcpClient
+
+        + Add(newUser: User) : bool
+        + Delete(id: int) : bool
+        + Update(id: int, updateUser : User) : bool
+        + GetAsync(id: int) : User
+        + GetAll() : User[]
+
+        constructor(netTcpClient : NetTcpClient)
+    }
+
+    class Program <<static>>
+    {
+        - ManageUsers(userApi: IUserApi) <<static>>
+        - PrintMenu()
+        + Main() <<static>>
+    }
+
+    NetTcpClient --> Command
+    UserApiClient --> NetTcpClient
+    UserApiClient ..|> IUserApi
+
+    Program --> UserApiClient
+    Program --> NetTcpClient
+}
+
+package "UDP server application" as UdpServer
+{
+    class UdpServerBase <<abstract>>
+    {
+        - _udpServer : UdpClient
+        + ListenAddress : Uri <<get>>
+
+        constructor(serverAddress : Uri)
+
+        - ProcessClientAsync()
+        # ProcessCommandAsync(command: Command) <<abstract>>
+        + Start()
+    }
+
+    class MessageUdpServer
+    {
+        + SendMessage(message : string) : bool
+        # ProcessCommandAsync(command: Command) <<override>>
+    }
+
+    class Program <<static>>
+    {
+        + Main() <<static>>
+        - ManageMessages(messageApi: IMessageApi) <<static>>
+        - PrintMenu()
+    }
+
+    MessageUdpServer --|> UdpServerBase
+    MessageUdpServer ..|> IMessageApi
+    Program --> MessageUdpServer
+    Program --> NetUdpClient
+}
+
+package "UDP client application" as UpdClient
+{
+    class NetUdpClient
+    {
+        - _udpClient : UdpClient
+        - _endpoint : IPEndPoint
+        - _serverPort : int
+        + ServerAddress : Uri <<get>>
+
+        constructor(serverAddress : Uri)
+
+        + SendAsync(command: Command)
+        + Dispose()
+    }
+
+    class MessageApiClient
+    {
+        + SendMessage(message : string) : bool
+
+        constructor(netUdpClient: NetUdpClient)
+    }
+
+    class Program <<static>>
+    {
+        + Main() <<static>>
+    }
+
+    MessageApiClient --|> NetUdpClient
+    MessageApiClient ..|> IMessageApi
+    Program --> MessageApiClient
+}
+
+package "TCP server application" as TcpServer
+{
+    class Program <<static>>
+    {
+        + Main() <<static>>
+    }
+
+    class TcpServerBase <<abstract>>
+    {
+        - tcpListener: TcpListener
+
+        + constructor(listenAddress : Uri)
+        + Start()
+        - ProcessClient(tcpClient : TcpClient)
+
+        # ProcessCommand(command : Command) : Command <<abstract>>
+        # SendOkResponse(code: byte, stream: NetworkStream)
+    }
+
+    class UserApiTcpServer 
+    {
+        - userApi: IUserApi
+        + constructor(userApi : IUserApi, listAddress: Uri)
+        # ProcessCommand(command : Command) : Command <<override
+    }
+    
+    class UserApi
+    {
+        - userRepository : map<int, User>
+        + Add(newUser: User) : bool
+        + Delete(id: int) : bool
+        + Update(id: int, updateUser : User) : bool
+        + GetAsync(id: int) : User
+        + GetAll() : User[]
+    }
+
+    UserApiTcpServer --|> TcpServerBase
+    UserApiTcpServer --> IUserApi
+    UserApi ..|> IUserApi
+    UserApi --> User
+    Program --> UserApi
+    Program --> UserApiTcpServer
+    UserApiTcpServer .. UserApi
+}
+
+
+@enduml
